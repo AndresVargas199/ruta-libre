@@ -69,7 +69,13 @@
   label.chk{display:flex;gap:8px;align-items:center;font-size:14px;margin-top:8px}
   .popbtn{display:block;width:100%;margin:4px 0;padding:7px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#222;font-weight:600}
 
+  #legend{position:fixed;z-index:999;right:12px;top:12px;background:var(--bg);border-radius:10px;box-shadow:var(--shadow);
+    padding:6px 10px;font-size:12px;display:flex;gap:10px}
+  #legend[hidden]{display:none}
+  #legend i{display:inline-block;width:14px;height:5px;border-radius:3px;margin-right:4px;vertical-align:middle}
+
   @media (max-width:640px){
+    #legend{display:none}
     .panel{left:8px;right:8px;top:8px;bottom:8px;width:auto;max-height:none}
     #results{margin-top:auto;max-height:45%;flex:none}
     .rlist{flex-direction:row}
@@ -126,6 +132,13 @@
   <div class="card" id="results"></div>
 </div>
 
+<div id="legend" hidden>
+  <span><i style="background:#2ecc40"></i>Fluido</span>
+  <span><i style="background:#f5b301"></i>Lento</span>
+  <span><i style="background:#d93025"></i>Congestión</span>
+  <span><i style="background:#7a1a12"></i>Cortado</span>
+</div>
+
 <script>
 const $ = id => document.getElementById(id);
 const store = {
@@ -140,7 +153,7 @@ L.control.zoom({position:'bottomright'}).addTo(map);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
 const blockLayer = L.layerGroup().addTo(map);
-let trafficLayer = null;
+let trafficLayer = null, trafficTimer = null, trafficErr = false;
 
 // ---------- Estado ----------
 let key = store.get('tomtomKey') || '';
@@ -156,9 +169,20 @@ function applyKey(){
   $('mode').textContent = key ? 'Tráfico en vivo' : 'Sin tráfico en vivo';
   $('mode').className = 'mode' + (key ? ' live' : '');
   if (trafficLayer){ map.removeLayer(trafficLayer); trafficLayer = null; }
-  if (key && $('layer').checked){
-    trafficLayer = L.tileLayer('https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?thickness=6&key=' + encodeURIComponent(key),
-      {maxZoom:19, opacity:.8, attribution:'Tráfico © TomTom'}).addTo(map);
+  clearInterval(trafficTimer);
+  const on = !!(key && $('layer').checked);
+  $('legend').hidden = !on;
+  if (on){
+    const k = encodeURIComponent(key);
+    // Velocidad actual de cada calle (verde, amarillo, rojo) + cortes y accidentes.
+    const flow = L.tileLayer('https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?thickness=6&key=' + k,
+      {maxZoom:19, opacity:.85, attribution:'Tráfico © TomTom'});
+    const inc = L.tileLayer('https://api.tomtom.com/traffic/map/4/tile/incidents/s3/{z}/{x}/{y}.png?key=' + k, {maxZoom:19});
+    flow.on('tileerror', () => { if (!trafficErr){ trafficErr = true; status('No se pudo cargar el tráfico. Revisa la clave de TomTom en Ajustes ⚙️.', true); } });
+    trafficErr = false;
+    trafficLayer = L.layerGroup([flow, inc]).addTo(map);
+    // El mapa de congestión se vuelve a pedir cada 2 minutos.
+    trafficTimer = setInterval(() => { flow.redraw(); inc.redraw(); }, 120000);
   }
 }
 
