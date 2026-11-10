@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ruta Libre</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#1f2328; --muted:#6b7280; --line:#e3e6ea; --soft:#f3f5f7;
+    --blue:#1a73e8; --red:#d93025; --green:#188038; --orange:#f57c00;
+    --shadow:0 2px 12px rgba(0,0,0,.18);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#1e2126; --fg:#eceff3; --muted:#9aa3ad; --line:#353a42; --soft:#2a2e35; --shadow:0 2px 12px rgba(0,0,0,.5); }
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--fg);background:var(--bg)}
+  #map{position:fixed;inset:0;z-index:0}
+  button{font:inherit;color:inherit;cursor:pointer}
+
+  .panel{position:fixed;z-index:1000;top:12px;left:12px;width:370px;max-height:calc(100% - 24px);
+    display:flex;flex-direction:column;gap:10px;pointer-events:none}
+  .card{background:var(--bg);border-radius:14px;box-shadow:var(--shadow);padding:12px;pointer-events:auto}
+  .title{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .title b{font-size:17px}
+  .icon{border:0;background:var(--soft);border-radius:50%;width:34px;height:34px;font-size:16px;flex:none}
+  .row{display:flex;gap:8px;align-items:center;position:relative}
+  .row + .row{margin-top:8px}
+  .dot{width:12px;height:12px;border-radius:50%;flex:none;border:3px solid var(--green)}
+  .dot.d{border-color:var(--red)}
+  .field{flex:1;position:relative;min-width:0}
+  input[type=text],input[type=password]{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;
+    background:var(--soft);color:var(--fg);font:inherit;outline:none}
+  input:focus{border-color:var(--blue);background:var(--bg)}
+  .sug{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:var(--bg);border:1px solid var(--line);
+    border-radius:10px;box-shadow:var(--shadow);z-index:5;overflow:hidden;display:none}
+  .sug div{padding:9px 12px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sug div:hover{background:var(--soft)}
+  .sug small{color:var(--muted)}
+  .actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .btn{border:1px solid var(--line);background:var(--bg);border-radius:20px;padding:8px 14px;font-weight:600}
+  .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff;flex:1}
+  .btn.on{background:var(--red);border-color:var(--red);color:#fff}
+  .status{margin-top:8px;font-size:13px;color:var(--muted);min-height:18px}
+  .status.err{color:var(--red)}
+  .mode{font-size:12px;padding:3px 8px;border-radius:10px;background:var(--soft);color:var(--muted)}
+  .mode.live{background:#e6f4ea;color:var(--green)}
+
+  #results{overflow:auto;display:none}
+  .route{border:2px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer}
+  .rlist{display:flex;flex-direction:column;gap:8px}
+  .route.sel{border-color:var(--blue)}
+  .route .t{font-size:20px;font-weight:700}
+  .route .s{color:var(--muted);font-size:13px}
+  .tag{display:inline-block;font-size:12px;font-weight:600;border-radius:8px;padding:1px 7px;margin-left:6px;vertical-align:middle}
+  .tag.fast{background:#e6f4ea;color:var(--green)}
+  .tag.delay{background:#fce8e6;color:var(--red)}
+  .steps{margin:8px 0 0;padding:0 0 0 20px;font-size:13px;display:none}
+  .steps li{margin:4px 0}
+  .steps span{color:var(--muted)}
+  .link{border:0;background:none;color:var(--blue);padding:0;margin-top:8px;font-size:13px;font-weight:600}
+
+  #settings{display:none}
+  #settings p{font-size:13px;color:var(--muted);margin:6px 0}
+  #settings ol{font-size:13px;margin:6px 0;padding-left:20px}
+  label.chk{display:flex;gap:8px;align-items:center;font-size:14px;margin-top:8px}
+  .popbtn{display:block;width:100%;margin:4px 0;padding:7px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#222;font-weight:600}
+
+  @media (max-width:640px){
+    .panel{left:8px;right:8px;top:8px;bottom:8px;width:auto;max-height:none}
+    #results{margin-top:auto;max-height:45%;flex:none}
+    .rlist{flex-direction:row}
+    .route{flex:1;min-width:0;padding:8px 10px}
+    .route .t{font-size:17px}
+    .route .tag{display:block;margin:2px 0 0;width:max-content;max-width:100%}
+    .leaflet-control-zoom{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="panel">
+  <div class="card">
+    <div class="title">
+      <b>Ruta Libre</b>
+      <span><span id="mode" class="mode">Sin tráfico en vivo</span>
+      <button class="icon" id="gear" title="Ajustes">⚙️</button></span>
+    </div>
+    <div class="row">
+      <span class="dot"></span>
+      <div class="field"><input type="text" id="in-o" placeholder="Origen" autocomplete="off"><div class="sug" id="sug-o"></div></div>
+      <button class="icon" id="gps" title="Usar mi ubicación">📍</button>
+    </div>
+    <div class="row">
+      <span class="dot d"></span>
+      <div class="field"><input type="text" id="in-d" placeholder="Destino" autocomplete="off"><div class="sug" id="sug-d"></div></div>
+      <button class="icon" id="swap" title="Invertir">⇅</button>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="go">Calcular ruta</button>
+      <button class="btn" id="block">🚧 Marcar bloqueo</button>
+    </div>
+    <div class="status" id="status">Escribe una dirección o toca el mapa.</div>
+  </div>
+
+  <div class="card" id="settings">
+    <b>Tráfico en vivo (opcional)</b>
+    <p>Con una clave gratuita de TomTom la app ve el tráfico real, pinta la congestión en el mapa y calcula la ruta más rápida esquivándola.</p>
+    <ol>
+      <li>Crea una cuenta gratis en developer.tomtom.com</li>
+      <li>Copia tu "API Key"</li>
+      <li>Pégala aquí y pulsa Guardar</li>
+    </ol>
+    <input type="password" id="key" placeholder="Clave de TomTom">
+    <label class="chk"><input type="checkbox" id="layer" checked> Mostrar congestión en el mapa</label>
+    <div class="actions">
+      <button class="btn primary" id="save">Guardar</button>
+      <button class="btn" id="clearblocks">Borrar bloqueos</button>
+    </div>
+  </div>
+
+  <div class="card" id="results"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const store = {
+  get(k){ try{ return localStorage.getItem(k) }catch(e){ return null } },
+  set(k,v){ try{ v==null ? localStorage.removeItem(k) : localStorage.setItem(k,v) }catch(e){} }
+};
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ---------- Mapa ----------
+const map = L.map('map',{zoomControl:false}).setView([-33.45,-70.66],11);
+L.control.zoom({position:'bottomright'}).addTo(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+const routeLayer = L.layerGroup().addTo(map);
+const blockLayer = L.layerGroup().addTo(map);
+let trafficLayer = null;
+
+// ---------- Estado ----------
+let key = store.get('tomtomKey') || '';
+const pts = {o:null, d:null};
+const markers = {o:null, d:null};
+let blocks = [];           // {lat, lon, r}
+let routes = [], sel = 0, blockMode = false, timer = null;
+const BLOCK_R = 400;       // metros alrededor de cada bloqueo
+
+function status(t, err){ $('status').textContent = t; $('status').className = 'status' + (err ? ' err' : ''); }
+
+function applyKey(){
+  $('mode').textContent = key ? 'Tráfico en vivo' : 'Sin tráfico en vivo';
+  $('mode').className = 'mode' + (key ? ' live' : '');
+  if (trafficLayer){ map.removeLayer(trafficLayer); trafficLayer = null; }
+  if (key && $('layer').checked){
+    trafficLayer = L.tileLayer('https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?thickness=6&key=' + encodeURIComponent(key),
+      {maxZoom:19, opacity:.8, attribution:'Tráfico © TomTom'}).addTo(map);
+  }
+}
+
+// ---------- Puntos ----------
+function pinIcon(color){
+  return L.divIcon({className:'', iconSize:[22,22], iconAnchor:[11,11],
+    html:`<div style="width:22px;height:22px;border-radius:50%;background:${color};border:4px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.5)"></div>`});
+}
+function setPoint(w, p){
+  pts[w] = p;
+  $('in-' + w).value = p ? p.label : '';
+  if (markers[w]){ map.removeLayer(markers[w]); markers[w] = null; }
+  if (p){
+    markers[w] = L.marker([p.lat,p.lon],{icon:pinIcon(w==='o' ? '#188038' : '#d93025'), draggable:true}).addTo(map);
+    markers[w].on('dragend', e => { const ll = e.target.getLatLng(); setPoint(w, {lat:ll.lat, lon:ll.lng, label:'Punto en el mapa'}); if (pts.o && pts.d) calc(); });
+  }
+}
+
+// ---------- Búsqueda de direcciones ----------
+async function search(q){
+  const c = map.getCenter();
+  if (key){
+    const u = `https://api.tomtom.com/search/2/search/${encodeURIComponent(q)}.json?key=${encodeURIComponent(key)}&limit=5&language=es-ES&lat=${c.lat}&lon=${c.lng}`;
+    const r = await fetch(u); if (!r.ok) throw new Error('búsqueda');
+    return (await r.json()).results.map(x => ({
+      lat:x.position.lat, lon:x.position.lon,
+      label:(x.poi ? x.poi.name + ', ' : '') + x.address.freeformAddress, sub:x.address.country || ''}));
+  }
+  const u = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5&lat=${c.lat}&lon=${c.lng}`;
+  const r = await fetch(u); if (!r.ok) throw new Error('búsqueda');
+  return (await r.json()).features.map(f => {
+    const p = f.properties;
+    const main = p.name || [p.street, p.housenumber].filter(Boolean).join(' ') || p.city || 'Lugar';
+    const sub = [p.name ? [p.street, p.housenumber].filter(Boolean).join(' ') : '', p.city, p.state, p.country].filter(Boolean).join(', ');
+    return {lat:f.geometry.coordinates[1], lon:f.geometry.coordinates[0], label:main + (p.city && p.city !== main ? ', ' + p.city : ''), main, sub};
+  });
+}
+function wireInput(w){
+  const inp = $('in-' + w), box = $('sug-' + w); let t, n = 0;
+  const run = async pickFirst => {
+    const q = inp.value.trim(); if (q.length < 3){ box.style.display = 'none'; return; }
+    const id = ++n;
+    try{
+      const res = await search(q); if (id !== n) return;
+      if (pickFirst && res[0]){ box.style.display = 'none'; choose(res[0]); return; }
+      box.innerHTML = res.length ? res.map((x,i) => `<div data-i="${i}">${esc(x.main || x.label)} <small>${esc(x.sub || '')}</small></div>`).join('')
+                                 : '<div><small>Sin resultados</small></div>';
+      box.style.display = 'block';
+      box.querySelectorAll('[data-i]').forEach(el => el.onmousedown = e => { e.preventDefault(); box.style.display = 'none'; choose(res[+el.dataset.i]); });
+    }catch(e){ box.style.display = 'none'; }
+  };
+  const choose = p => { setPoint(w, p); if (pts.o && pts.d) calc(); else map.setView([p.lat,p.lon], 14); };
+  inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => run(false), 450); });
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter'){ clearTimeout(t); run(true); } });
+  inp.addEventListener('blur', () => setTimeout(() => box.style.display = 'none', 150));
+}
+wireInput('o'); wireInput('d');
+
+// ---------- Bloqueos marcados a mano ----------
+function drawBlocks(){
+  blockLayer.clearLayers();
+  blocks.forEach((b,i) => {
+    const c = L.circle([b.lat,b.lon],{radius:b.r, color:'#d93025', fillColor:'#d93025', fillOpacity:.35, weight:2}).addTo(blockLayer);
+    c.bindTooltip('🚧 Bloqueo (toca para quitar)');
+    c.on('click', e => { L.DomEvent.stop(e); blocks.splice(i,1); saveBlocks(); });
+  });
+}
+function saveBlocks(){
+  store.set('blocks', JSON.stringify(blocks)); drawBlocks();
+  if (pts.o && pts.d) calc();
+}
+function addBlock(ll){ blocks.push({lat:ll.lat, lon:ll.lng, r:BLOCK_R}); saveBlocks(); }
+function circlePoly(b, n = 12){
+  const out = [], dLat = b.r / 111320, dLon = b.r / (111320 * Math.cos(b.lat * Math.PI / 180));
+  for (let i = 0; i <= n; i++){ const a = 2 * Math.PI * i / n; out.push([b.lon + dLon * Math.cos(a), b.lat + dLat * Math.sin(a)]); }
+  return out;
+}
+function setBlockMode(on){
+  blockMode = on;
+  $('block').classList.toggle('on', on);
+  $('block').textContent = on ? '✓ Listo' : '🚧 Marcar bloqueo';
+  $('map').style.cursor = on ? 'crosshair' : '';
+  if (on) status('Toca el mapa donde hay bloqueo o congestión. Toca un círculo rojo para quitarlo.');
+  else if (!routes.length) status('Escribe una dirección o toca el mapa.');
+}
+
+map.on('click', e => {
+  if (blockMode){ addBlock(e.latlng); return; }
+  const div = document.createElement('div');
+  div.innerHTML = '<button class="popbtn" data-a="o">🟢 Salir desde aquí</button><button class="popbtn" data-a="d">🔴 Ir aquí</button><button class="popbtn" data-a="b">🚧 Hay bloqueo aquí</button>';
+  const pop = L.popup({closeButton:false}).setLatLng(e.latlng).setContent(div).openOn(map);
+  div.querySelectorAll('button').forEach(b => b.onclick = () => {
+    map.closePopup(pop);
+    if (b.dataset.a === 'b'){ addBlock(e.latlng); return; }
+    setPoint(b.dataset.a, {lat:e.latlng.lat, lon:e.latlng.lng, label:'Punto en el mapa'});
+    if (pts.o && pts.d) calc();
+  });
+});
+
+// ---------- Cálculo de rutas ----------
+function decode6(str){
+  let i = 0, lat = 0, lon = 0; const out = [];
+  while (i < str.length){
+    for (const k of [0,1]){
+      let r = 0, s = 0, b;
+      do { b = str.charCodeAt(i++) - 63; r |= (b & 31) << s; s += 5; } while (b >= 32);
+      const d = (r & 1) ? ~(r >> 1) : (r >> 1);
+      if (k === 0) lat += d; else lon += d;
+    }
+    out.push([lat / 1e6, lon / 1e6]);
+  }
+  return out;
+}
+
+// Sin clave: servidor público de Valhalla (OpenStreetMap). Esquiva los bloqueos marcados.
+async function valhalla(){
+  const body = {
+    locations:[{lat:pts.o.lat, lon:pts.o.lon},{lat:pts.d.lat, lon:pts.d.lon}],
+    costing:'auto', alternates:2, language:'es-ES', units:'kilometers'
+  };
+  if (blocks.length) body.exclude_polygons = blocks.map(b => circlePoly(b));
+  const r = await fetch('https://valhalla1.openstreetmap.de/route', {method:'POST', body:JSON.stringify(body)});
+  const j = await r.json();
+  if (!r.ok || !j.trip) throw new Error(j.error ? 'No se encontró ruta: ' + j.error : 'No se encontró ruta.');
+  return [j.trip, ...(j.alternates || []).map(a => a.trip)].map(t => {
+    const leg = t.legs[0];
+    return { time:t.summary.time, dist:t.summary.length * 1000, delay:null, pts:decode6(leg.shape), traffic:[],
+      steps:leg.maneuvers.map(m => ({text:m.instruction, dist:m.length * 1000})) };
+  });
+}
+
+// Con clave: TomTom con tráfico en tiempo real.
+async function tomtom(){
+  const loc = `${pts.o.lat},${pts.o.lon}:${pts.d.lat},${pts.d.lon}`;
+  const u = `https://api.tomtom.com/routing/1/calculateRoute/${loc}/json?key=${encodeURIComponent(key)}` +
+    '&traffic=true&routeType=fastest&travelMode=car&maxAlternatives=2&sectionType=traffic&instructionsType=text&language=es-ES&computeTravelTimeFor=all';
+  const body = {};
+  if (blocks.length){
+    body.avoidAreas = {rectangles: blocks.slice(0,10).map(b => {
+      const dLat = b.r / 111320, dLon = b.r / (111320 * Math.cos(b.lat * Math.PI / 180));
+      return {southWestCorner:{latitude:b.lat - dLat, longitude:b.lon - dLon}, northEastCorner:{latitude:b.lat + dLat, longitude:b.lon + dLon}};
+    })};
+  }
+  const r = await fetch(u, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  if (r.status === 403 || r.status === 401) throw new Error('La clave de TomTom no es válida. Revísala en Ajustes ⚙️.');
+  const j = await r.json();
+  if (!r.ok || !j.routes) throw new Error('No se encontró ruta' + (j.detailedError ? ': ' + j.detailedError.message : '.'));
+  return j.routes.map(rt => {
+    const p = rt.legs.flatMap(l => l.points.map(x => [x.latitude, x.longitude]));
+    const ins = (rt.guidance && rt.guidance.instructions) || [];
+    return { time:rt.summary.travelTimeInSeconds, dist:rt.summary.lengthInMeters, delay:rt.summary.trafficDelayInSeconds || 0, pts:p,
+      traffic:(rt.sections || []).filter(s => s.sectionType === 'TRAFFIC').map(s => ({a:s.startPointIndex, b:s.endPointIndex, m:s.magnitudeOfDelay})),
+      steps:ins.map((m,i) => ({text:m.message, dist:(ins[i+1] ? ins[i+1].routeOffsetInMeters : rt.summary.lengthInMeters) - m.routeOffsetInMeters})) };
+  });
+}
+
+async function calc(quiet){
+  if (!pts.o || !pts.d){ status('Elige un origen y un destino.', true); return; }
+  if (!quiet) status('Calculando la ruta más rápida…');
+  try{
+    routes = key ? await tomtom() : await valhalla();
+    routes.sort((a,b) => a.time - b.time);
+    sel = 0; draw(!quiet); renderResults();
+    const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
+    status(key ? `Tráfico actualizado a las ${now}. Se revisa cada 2 minutos.`
+               : (blocks.length ? `Ruta que esquiva ${blocks.length} bloqueo(s) marcado(s).` : 'Ruta sin datos de tráfico. Marca bloqueos 🚧 o activa el tráfico en vivo ⚙️.'));
+    clearInterval(timer);
+    if (key) timer = setInterval(() => calc(true), 120000);
+  }catch(e){
+    if (!quiet){ routes = []; routeLayer.clearLayers(); $('results').style.display = 'none'; }
+    status(e.message === 'Failed to fetch' ? 'No hay conexión con el servicio de rutas. Intenta de nuevo.' : e.message, true);
+  }
+}
+
+const TRAFFIC_COLOR = {0:'#f5b301', 1:'#f5b301', 2:'#f57c00', 3:'#d93025', 4:'#7a1a12'};
+function draw(fit){
+  routeLayer.clearLayers();
+  routes.forEach((r,i) => { if (i !== sel)
+    L.polyline(r.pts,{color:'#8a93a0', weight:6, opacity:.75}).addTo(routeLayer).on('click', e => { L.DomEvent.stop(e); select(i); }); });
+  const r = routes[sel]; if (!r) return;
+  L.polyline(r.pts,{color:'#fff', weight:10, opacity:.9}).addTo(routeLayer);
+  L.polyline(r.pts,{color:'#1a73e8', weight:6}).addTo(routeLayer);
+  r.traffic.forEach(s => L.polyline(r.pts.slice(s.a, s.b + 1),{color:TRAFFIC_COLOR[s.m] || '#f57c00', weight:6}).addTo(routeLayer));
+  if (fit){
+    const wide = window.innerWidth > 640;
+    map.fitBounds(L.latLngBounds(r.pts), {paddingTopLeft: wide ? [400,40] : [30,240], paddingBottomRight: wide ? [40,40] : [30,170]});
+  }
+}
+function select(i){ sel = i; draw(false); renderResults(); }
+
+const fmtTime = s => { const m = Math.round(s / 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
+const fmtDist = m => m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
+
+function renderResults(){
+  const box = $('results');
+  if (!routes.length){ box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  const cur = routes[sel];
+  box.innerHTML = '<div class="rlist">' + routes.map((r,i) => {
+    const eta = new Date(Date.now() + r.time * 1000).toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
+    const delay = r.delay == null ? '' : (r.delay >= 60 ? `<span class="tag delay">+${fmtTime(r.delay)} por tráfico</span>` : '<span class="tag fast">Sin congestión</span>');
+    return `<div class="route${i === sel ? ' sel' : ''}" data-i="${i}">
+      <div class="t">${fmtTime(r.time)}${i === 0 ? '<span class="tag fast">Más rápida</span>' : ''}${delay}</div>
+      <div class="s">${fmtDist(r.dist)} · llegas ${eta}</div>
+    </div>`;
+  }).join('') + `</div><button class="link" id="tog">Ver indicaciones</button>
+    <ol class="steps" id="steps">${cur.steps.map(s => `<li>${esc(s.text)} <span>${s.dist > 0 ? fmtDist(s.dist) : ''}</span></li>`).join('')}</ol>`;
+  box.querySelectorAll('.route').forEach(el => el.onclick = () => { if (+el.dataset.i !== sel) select(+el.dataset.i); });
+  const tog = $('tog');
+  if (tog) tog.onclick = e => { e.stopPropagation(); const s = $('steps'), open = s.style.display === 'block';
+    s.style.display = open ? 'none' : 'block'; tog.textContent = open ? 'Ver indicaciones' : 'Ocultar indicaciones'; };
+}
+
+// ---------- Botones ----------
+$('go').onclick = () => calc();
+$('block').onclick = () => setBlockMode(!blockMode);
+$('swap').onclick = () => { const a = pts.o, b = pts.d; setPoint('o', b); setPoint('d', a); if (pts.o && pts.d) calc(); };
+$('gps').onclick = () => {
+  if (!navigator.geolocation){ status('Este navegador no permite usar la ubicación.', true); return; }
+  status('Buscando tu ubicación…');
+  navigator.geolocation.getCurrentPosition(p => {
+    setPoint('o', {lat:p.coords.latitude, lon:p.coords.longitude, label:'Mi ubicación'});
+    if (pts.d) calc(); else { map.setView([p.coords.latitude, p.coords.longitude], 15); status('Ahora elige el destino.'); }
+  }, () => status('No se pudo obtener tu ubicación. Revisa el permiso del navegador.', true), {enableHighAccuracy:true, timeout:10000});
+};
+$('gear').onclick = () => { const s = $('settings'); s.style.display = s.style.display === 'block' ? 'none' : 'block'; $('key').value = key; };
+$('save').onclick = () => {
+  key = $('key').value.trim(); store.set('tomtomKey', key || null);
+  applyKey(); $('settings').style.display = 'none';
+  if (pts.o && pts.d) calc(); else status(key ? 'Tráfico en vivo activado.' : 'Tráfico en vivo desactivado.');
+};
+$('layer').onchange = applyKey;
+$('clearblocks').onclick = () => { blocks = []; saveBlocks(); };
+
+// ---------- Inicio ----------
+try{ blocks = JSON.parse(store.get('blocks') || '[]') || []; }catch(e){ blocks = []; }
+drawBlocks(); applyKey();
+</script>
+</body>
+</html>
