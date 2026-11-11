@@ -63,6 +63,15 @@
   .steps span{color:var(--muted)}
   .link{border:0;background:none;color:var(--blue);padding:0;margin-top:8px;font-size:13px;font-weight:600}
 
+  #favs{margin-top:8px;border-top:1px solid var(--line);padding-top:8px}
+  #favs small{color:var(--muted);display:block;margin-bottom:4px}
+  .fav{display:flex;gap:6px;margin-top:4px}
+  .favgo{flex:1;min-width:0;text-align:left;border:1px solid var(--line);background:var(--soft);border-radius:10px;padding:8px 10px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .favdel{border:0;background:none;color:var(--muted);padding:0 6px}
+  .nav{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
+  .nav small{color:var(--muted);width:100%}
+  .btn.sm{padding:5px 10px;font-size:13px;text-decoration:none;color:var(--fg)}
   #settings{display:none}
   #settings p{font-size:13px;color:var(--muted);margin:6px 0}
   #settings ol{font-size:13px;margin:6px 0;padding-left:20px}
@@ -111,6 +120,7 @@
       <button class="btn" id="block">🚧 Marcar bloqueo</button>
     </div>
     <div class="status" id="status">Escribe una dirección o toca el mapa.</div>
+    <div id="favs" hidden></div>
   </div>
 
   <div class="card" id="settings">
@@ -348,7 +358,7 @@ async function calc(quiet){
     routes.sort((a,b) => a.time - b.time);
     sel = 0; draw(!quiet); renderResults();
     const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
-    status(key ? `Tráfico actualizado a las ${now}. Se revisa cada 2 minutos.`
+    status(key ? `Tráfico actualizado a las ${now} · se revisa cada 2 minutos`
                : (blocks.length ? `Ruta que esquiva ${blocks.length} bloqueo(s) marcado(s).` : 'Ruta sin datos de tráfico. Marca bloqueos 🚧 o activa el tráfico en vivo ⚙️.'));
     clearInterval(timer);
     if (key) timer = setInterval(() => calc(true), 120000);
@@ -379,6 +389,7 @@ const fmtDist = m => m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).t
 
 function renderResults(){
   const box = $('results');
+  renderFavs();
   if (!routes.length){ box.style.display = 'none'; return; }
   box.style.display = 'block';
   const cur = routes[sel];
@@ -391,10 +402,55 @@ function renderResults(){
     </div>`;
   }).join('') + `</div><button class="link" id="tog">Ver indicaciones</button>
     <ol class="steps" id="steps">${cur.steps.map(s => `<li>${esc(s.text)} <span>${s.dist > 0 ? fmtDist(s.dist) : ''}</span></li>`).join('')}</ol>`;
+  // Guardar la ruta y pasar el viaje a una app que guía por voz y se proyecta en el auto.
+  const o = pts.o.lat + ',' + pts.o.lon, d = pts.d.lat + ',' + pts.d.lon;
+  box.insertAdjacentHTML('beforeend', `<div class="nav">
+    <button class="btn sm" id="fav">⭐ Guardar ruta</button>
+    <button class="btn sm" id="close">✕ Cerrar</button>
+    <small>Guiarme por voz o en la pantalla del auto con:</small>
+    <a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${d}&travelmode=driving">Google Maps</a>
+    <a class="btn sm" target="_blank" rel="noopener" href="https://waze.com/ul?ll=${d}&navigate=yes">Waze</a>
+    <a class="btn sm" target="_blank" rel="noopener" href="https://maps.apple.com/?saddr=${o}&daddr=${d}&dirflg=d">Mapas de Apple</a>
+  </div>`);
+  $('fav').onclick = addFav; $('close').onclick = closeRoute;
   box.querySelectorAll('.route').forEach(el => el.onclick = () => { if (+el.dataset.i !== sel) select(+el.dataset.i); });
   const tog = $('tog');
   if (tog) tog.onclick = e => { e.stopPropagation(); const s = $('steps'), open = s.style.display === 'block';
     s.style.display = open ? 'none' : 'block'; tog.textContent = open ? 'Ver indicaciones' : 'Ocultar indicaciones'; };
+}
+
+// ---------- Rutas guardadas ----------
+let favs = [];
+function saveFavs(){ store.set('favs', JSON.stringify(favs)); renderFavs(); }
+function renderFavs(){
+  const box = $('favs');
+  box.hidden = !favs.length || routes.length > 0;
+  box.innerHTML = '<small>⭐ Rutas guardadas (toca una para calcularla con el tráfico de ahora)</small>' +
+    favs.map((f,i) => `<div class="fav"><button class="favgo" data-i="${i}">${esc(f.name)}</button><button class="favdel" data-i="${i}" title="Borrar">✕</button></div>`).join('');
+  box.querySelectorAll('.favgo').forEach(b => b.onclick = () => loadFav(favs[+b.dataset.i]));
+  box.querySelectorAll('.favdel').forEach(b => b.onclick = () => { favs.splice(+b.dataset.i, 1); saveFavs(); });
+}
+function loadFav(f){
+  setPoint('d', f.d);
+  // Si la ruta salía de "Mi ubicación", se usa el lugar donde estás ahora.
+  if (f.o.gps && navigator.geolocation){
+    status('Buscando tu ubicación…');
+    navigator.geolocation.getCurrentPosition(
+      p => { setPoint('o', {lat:p.coords.latitude, lon:p.coords.longitude, label:'Mi ubicación', gps:true}); calc(); },
+      () => { setPoint('o', f.o); calc(); }, {enableHighAccuracy:true, timeout:10000});
+  } else { setPoint('o', f.o); calc(); }
+}
+function addFav(){
+  const short = t => t.split(',')[0];
+  const name = short(pts.o.label) + ' → ' + short(pts.d.label);
+  favs = favs.filter(f => f.name !== name);
+  favs.unshift({name, o:pts.o, d:pts.d}); saveFavs();
+  status('Ruta guardada. Aparece en ⭐ Rutas guardadas al cerrar esta ruta.');
+}
+function closeRoute(){
+  clearInterval(timer); routes = []; routeLayer.clearLayers();
+  setPoint('o', null); setPoint('d', null); renderResults();
+  status('Escribe una dirección o toca el mapa.');
 }
 
 // ---------- Botones ----------
@@ -405,7 +461,7 @@ $('gps').onclick = () => {
   if (!navigator.geolocation){ status('Este navegador no permite usar la ubicación.', true); return; }
   status('Buscando tu ubicación…');
   navigator.geolocation.getCurrentPosition(p => {
-    setPoint('o', {lat:p.coords.latitude, lon:p.coords.longitude, label:'Mi ubicación'});
+    setPoint('o', {lat:p.coords.latitude, lon:p.coords.longitude, label:'Mi ubicación', gps:true});
     if (pts.d) calc(); else { map.setView([p.coords.latitude, p.coords.longitude], 15); status('Ahora elige el destino.'); }
   }, () => status('No se pudo obtener tu ubicación. Revisa el permiso del navegador.', true), {enableHighAccuracy:true, timeout:10000});
 };
@@ -420,7 +476,8 @@ $('clearblocks').onclick = () => { blocks = []; saveBlocks(); };
 
 // ---------- Inicio ----------
 try{ blocks = JSON.parse(store.get('blocks') || '[]') || []; }catch(e){ blocks = []; }
-drawBlocks(); applyKey();
+try{ favs = JSON.parse(store.get('favs') || '[]') || []; }catch(e){ favs = []; }
+drawBlocks(); applyKey(); renderFavs();
 </script>
 </body>
 </html>
