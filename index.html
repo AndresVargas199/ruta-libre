@@ -319,14 +319,15 @@ async function tomtom(){
   const loc = `${pts.o.lat},${pts.o.lon}:${pts.d.lat},${pts.d.lon}`;
   const u = `https://api.tomtom.com/routing/1/calculateRoute/${loc}/json?key=${encodeURIComponent(key)}` +
     '&traffic=true&routeType=fastest&travelMode=car&maxAlternatives=2&sectionType=traffic&instructionsType=text&language=es-ES&computeTravelTimeFor=all';
-  const body = {};
+  let body = null;   // sin bloqueos se pide por GET: TomTom rechaza un cuerpo vacío
   if (blocks.length){
+    body = {};
     body.avoidAreas = {rectangles: blocks.slice(0,10).map(b => {
       const dLat = b.r / 111320, dLon = b.r / (111320 * Math.cos(b.lat * Math.PI / 180));
       return {southWestCorner:{latitude:b.lat - dLat, longitude:b.lon - dLon}, northEastCorner:{latitude:b.lat + dLat, longitude:b.lon + dLon}};
     })};
   }
-  const r = await fetch(u, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const r = body ? await fetch(u, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}) : await fetch(u);
   if (r.status === 403 || r.status === 401) throw new Error('La clave de TomTom no es válida. Revísala en Ajustes ⚙️.');
   const j = await r.json();
   if (!r.ok || !j.routes) throw new Error('No se encontró ruta' + (j.detailedError ? ': ' + j.detailedError.message : '.'));
