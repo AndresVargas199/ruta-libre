@@ -404,11 +404,14 @@ function renderResults(){
     <ol class="steps" id="steps">${cur.steps.map(s => `<li>${esc(s.text)} <span>${s.dist > 0 ? fmtDist(s.dist) : ''}</span></li>`).join('')}</ol>`;
   // Guardar la ruta y pasar el viaje a una app que guía por voz y se proyecta en el auto.
   const o = pts.o.lat + ',' + pts.o.lon, d = pts.d.lat + ',' + pts.d.lon;
+  const via = encodeURIComponent(viaPoints(cur).join('|'));
+  const saved = favs.some(f => f.name === favName());
   box.insertAdjacentHTML('beforeend', `<div class="nav">
-    <button class="btn sm" id="fav">⭐ Guardar ruta</button>
+    <button class="btn sm" id="fav">${saved ? '✓ Ruta guardada' : '⭐ Guardar ruta'}</button>
     <button class="btn sm" id="close">✕ Cerrar</button>
-    <small>Guiarme por voz o en la pantalla del auto con:</small>
-    <a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${d}&travelmode=driving">Google Maps</a>
+    <small>Seguir esta misma ruta en el auto:</small>
+    <a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${d}&waypoints=${via}&travelmode=driving">Google Maps (misma ruta)</a>
+    <small>Solo llevan el destino y eligen su propia ruta:</small>
     <a class="btn sm" target="_blank" rel="noopener" href="https://waze.com/ul?ll=${d}&navigate=yes">Waze</a>
     <a class="btn sm" target="_blank" rel="noopener" href="https://maps.apple.com/?saddr=${o}&daddr=${d}&dirflg=d">Mapas de Apple</a>
   </div>`);
@@ -424,7 +427,7 @@ let favs = [];
 function saveFavs(){ store.set('favs', JSON.stringify(favs)); renderFavs(); }
 function renderFavs(){
   const box = $('favs');
-  box.hidden = !favs.length || routes.length > 0;
+  box.hidden = !favs.length || (routes.length > 0 && window.innerWidth <= 640);
   box.innerHTML = '<small>⭐ Rutas guardadas (toca una para calcularla con el tráfico de ahora)</small>' +
     favs.map((f,i) => `<div class="fav"><button class="favgo" data-i="${i}">${esc(f.name)}</button><button class="favdel" data-i="${i}" title="Borrar">✕</button></div>`).join('');
   box.querySelectorAll('.favgo').forEach(b => b.onclick = () => loadFav(favs[+b.dataset.i]));
@@ -440,12 +443,31 @@ function loadFav(f){
       () => { setPoint('o', f.o); calc(); }, {enableHighAccuracy:true, timeout:10000});
   } else { setPoint('o', f.o); calc(); }
 }
-function addFav(){
+function favName(){
   const short = t => t.split(',')[0];
-  const name = short(pts.o.label) + ' → ' + short(pts.d.label);
+  return short(pts.o.label) + ' → ' + short(pts.d.label);
+}
+function addFav(){
+  const name = favName();
   favs = favs.filter(f => f.name !== name);
   favs.unshift({name, o:pts.o, d:pts.d}); saveFavs();
-  status('Ruta guardada. Aparece en ⭐ Rutas guardadas al cerrar esta ruta.');
+  $('fav').textContent = '✓ Ruta guardada';
+  status(store.get('favs') ? 'Ruta guardada en ⭐ Rutas guardadas.' : 'No se pudo guardar: este navegador no permite guardar datos (¿ventana privada?).', !store.get('favs'));
+}
+// Puntos intermedios de la ruta elegida, repartidos a lo largo del camino,
+// para que Google Maps pase por los mismos lugares (acepta hasta 9).
+function viaPoints(r){
+  const p = r.pts, cum = [0];
+  for (let i = 1; i < p.length; i++) cum.push(cum[i-1] + map.distance(p[i-1], p[i]));
+  const total = cum[cum.length - 1];
+  const n = Math.max(1, Math.min(8, Math.round(total / 15000)));
+  const out = []; let j = 0;
+  for (let k = 1; k <= n; k++){
+    const target = total * k / (n + 1);
+    while (cum[j] < target) j++;
+    out.push(p[j][0].toFixed(5) + ',' + p[j][1].toFixed(5));
+  }
+  return out;
 }
 function closeRoute(){
   clearInterval(timer); routes = []; routeLayer.clearLayers();
