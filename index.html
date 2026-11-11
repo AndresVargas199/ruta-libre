@@ -117,11 +117,11 @@
     <b>Tráfico en vivo (opcional)</b>
     <p>Con una clave gratuita de TomTom la app ve el tráfico real, pinta la congestión en el mapa y calcula la ruta más rápida esquivándola.</p>
     <ol>
-      <li>Crea una cuenta gratis en developer.tomtom.com</li>
-      <li>Copia tu "API Key"</li>
-      <li>Pégala aquí y pulsa Guardar</li>
+      <li>Entra a my.tomtom.com con tu cuenta gratuita</li>
+      <li>Menú Keys → API &amp; SDK Keys → copia la clave</li>
+      <li>Pégala aquí abajo y pulsa Guardar</li>
     </ol>
-    <input type="password" id="key" placeholder="Clave de TomTom">
+    <input type="text" id="key" placeholder="Pega aquí la clave de TomTom" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
     <label class="chk"><input type="checkbox" id="layer" checked> Mostrar congestión en el mapa</label>
     <div class="actions">
       <button class="btn primary" id="save">Guardar</button>
@@ -413,7 +413,7 @@ $('gear').onclick = () => { const s = $('settings'); s.style.display = s.style.d
 $('save').onclick = () => {
   key = $('key').value.trim(); store.set('tomtomKey', key || null);
   applyKey(); $('settings').style.display = 'none';
-  if (pts.o && pts.d) calc(); else status(key ? 'Tráfico en vivo activado.' : 'Tráfico en vivo desactivado.');
+  if (pts.o && pts.d) calc(); else status(key ? 'Clave guardada. Tráfico en vivo activado.' : 'No hay clave: tráfico en vivo desactivado.', !key);
 };
 $('layer').onchange = applyKey;
 $('clearblocks').onclick = () => { blocks = []; saveBlocks(); };
