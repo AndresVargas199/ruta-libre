@@ -175,7 +175,7 @@ function applyKey(){
   if (on){
     const k = encodeURIComponent(key);
     // Velocidad actual de cada calle (verde, amarillo, rojo) + cortes y accidentes.
-    const flow = L.tileLayer('https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?thickness=6&key=' + k,
+    const flow = L.tileLayer('https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=' + k,
       {maxZoom:19, opacity:.85, attribution:'Tráfico © TomTom'});
     const inc = L.tileLayer('https://api.tomtom.com/traffic/map/4/tile/incidents/s3/{z}/{x}/{y}.png?key=' + k, {maxZoom:19});
     flow.on('tileerror', () => { if (!trafficErr){ trafficErr = true; status('No se pudo cargar el tráfico. Revisa la clave de TomTom en Ajustes ⚙️.', true); } });
